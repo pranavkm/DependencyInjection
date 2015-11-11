@@ -1,32 +1,17 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved.
-// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
-
-using Grace.DependencyInjection;
 using System;
 using System.Collections.Generic;
-using System.Reflection;
+using Grace.DependencyInjection;
+using Grace.DependencyInjection.Lifestyle;
+using Microsoft.Extensions.DependencyInjection;
 
-
-namespace Microsoft.Framework.DependencyInjection.Grace
+namespace Grace.Extensions.DependencyInjection
 {
     public static class GraceRegistration
     {
         public static void Populate(
                 IExportLocator exportLocator,
-                IEnumerable<IServiceDescriptor> descriptors)
+                IEnumerable<ServiceDescriptor> descriptors)
         {
-            Populate(exportLocator, descriptors, fallbackServiceProvider: null);
-        }
-
-        public static void Populate(IExportLocator exportLocator,
-                                    IEnumerable<IServiceDescriptor> descriptors,
-                                    IServiceProvider fallbackServiceProvider)
-        {
-            if(fallbackServiceProvider != null)
-            {
-                exportLocator.AddMissingExportStrategyProvider(new ChainedMissingExportStrategyProvider(fallbackServiceProvider));
-            }
-
             exportLocator.Configure(c =>
             {
                 c.Export<GraceServiceProvider>().As<IServiceProvider>();
@@ -36,7 +21,7 @@ namespace Microsoft.Framework.DependencyInjection.Grace
             });    
         }
 
-        private static void Register(IExportRegistrationBlock c, IEnumerable<IServiceDescriptor> descriptors)
+        private static void Register(IExportRegistrationBlock c, IEnumerable<ServiceDescriptor> descriptors)
         {
             foreach(var descriptor in descriptors)
             {
@@ -44,39 +29,58 @@ namespace Microsoft.Framework.DependencyInjection.Grace
                 {
                     c.Export(descriptor.ImplementationType).
                       As(descriptor.ServiceType).
-                      ConfigureLifecycle(descriptor.Lifecycle);
+                      ConfigureLifetime(descriptor.Lifetime);
+                }
+                else if (descriptor.ImplementationFactory != null)
+                {
+                    ILifestyle lifeStyle = null;
+                    switch (descriptor.Lifetime)
+                    {
+                        case ServiceLifetime.Singleton:
+                            lifeStyle = new SingletonLifestyle();
+                            break;
+                        case ServiceLifetime.Scoped:
+                            lifeStyle = new SingletonPerScopeLifestyle();
+                            break;
+                    }
+
+                    c.AddExportStrategy(
+                        new FuncInstanceExportStrategy(
+                            descriptor.ServiceType,
+                            lifeStyle,
+                            descriptor.ImplementationFactory));
                 }
                 else
                 {
                     c.ExportInstance(descriptor.ImplementationInstance).
                       As(descriptor.ServiceType).
-                      ConfigureLifecycle(descriptor.Lifecycle);
+                     ConfigureLifetime(descriptor.Lifetime);
                 }
             }
         }
 
-        private static IFluentExportStrategyConfiguration ConfigureLifecycle(this IFluentExportStrategyConfiguration configuration, LifecycleKind lifecycleKind)
+        private static IFluentExportStrategyConfiguration ConfigureLifetime(this IFluentExportStrategyConfiguration configuration, ServiceLifetime lifetime)
         {
-            switch (lifecycleKind)
+            switch (lifetime)
             {
-                case LifecycleKind.Scoped:
+                case ServiceLifetime.Scoped:
                     return configuration.Lifestyle.SingletonPerScope();
                     
-                case LifecycleKind.Singleton:
+                case ServiceLifetime.Singleton:
                     return configuration.Lifestyle.Singleton();
             }
 
             return configuration;
         }
 
-        private static IFluentExportInstanceConfiguration<T> ConfigureLifecycle<T>(this IFluentExportInstanceConfiguration<T> configuration, LifecycleKind lifecycleKind)
+        private static IFluentExportInstanceConfiguration<T> ConfigureLifetime<T>(this IFluentExportInstanceConfiguration<T> configuration, ServiceLifetime lifecycleKind)
         {
             switch (lifecycleKind)
             {
-                case LifecycleKind.Scoped:
+                case ServiceLifetime.Scoped:
                     return configuration.Lifestyle.SingletonPerScope();
 
-                case LifecycleKind.Singleton:
+                case ServiceLifetime.Singleton:
                     return configuration.Lifestyle.Singleton();
             }
 
